@@ -2660,7 +2660,7 @@ function startContestRound(){
   clearTimeout(contestState.reportTimer);
   contestState = { theirCall: "", awaitingReport: false, awaitingClosing: false, reportTimer: null, lastReport: "", currentSub: "", msgLog: [] };
   txTargetDisplay.textContent = "CONTEST";
-  setContestSub(`Manipulez : CQ TEST DE ${state.mycall}`);
+  setContestSub(`Manipulez : CQ TEST DE ${state.mycall} K`);
 }
 
 function contestCheckBuffer(){
@@ -2685,7 +2685,7 @@ function contestCheckBuffer(){
       } else if(contestState.awaitingClosing){
         setContestSub(`Manipulez : 73 TU`);
       } else {
-        setContestSub(`Manipulez : CQ TEST DE ${mycallSafe}`);
+        setContestSub(`Manipulez : CQ TEST DE ${mycallSafe} K`);
       }
     });
     return;
@@ -2731,7 +2731,7 @@ function contestCheckBuffer(){
         playMorseTx("EE", txState.listenWpm, txState.freq, () => {
           contestState.awaitingClosing = false;
           contestState.theirCall = "";
-          setContestSub(`Manipulez : CQ TEST DE ${mycallSafe}`);
+          setContestSub(`Manipulez : CQ TEST DE ${mycallSafe} K`);
         });
       }, 2000);
     }
@@ -2818,7 +2818,7 @@ function startQsoRound(){
                theirMeteo: "", theirRig: "", theirAntenna: "",
                step: 0, stepTimer: null, lastMsg: "", currentSub: "", msgLog: [] };
   txTargetDisplay.textContent = "QSO";
-  setQsoSub(`Manipulez : CQ CQ DE ${state.mycall}`);
+  setQsoSub(`Manipulez : CQ CQ DE ${state.mycall} K`);
 }
 
 function qsoCheckBuffer(){
@@ -2958,7 +2958,7 @@ function startQsoFrRound(){
                  theirMeteoDesc: "", theirMeteoTemp: "", myName: "",
                  lastMsg: "", currentSub: "", step: 0, stepTimer: null, msgLog: [] };
   txTargetDisplay.textContent = "QSO FR";
-  setQsoFrSub(`Manipulez : CQ CQ DE ${state.mycall}`);
+  setQsoFrSub(`Manipulez : CQ CQ DE ${state.mycall} K`);
 }
 
 function qsoFrCheckBuffer(){
