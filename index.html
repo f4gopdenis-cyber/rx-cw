@@ -1983,7 +1983,7 @@ const txState = {
   capturing: null,         // "dit" | "dah" | null pendant la capture d'une touche
   stats: { correct:0, total:0, bestStreak:0, streak:0 },
   sessionLen: 10,          // nombre d'essais voulu par session (réglage persistant)
-  session: { done: 0, correct: 0, active: false }, // progression de la session en cours
+  session: { done: 0, correct: 0, active: false, repeats: 0 }, // progression de la session en cours (repeats = réécoutes cumulées, pénalisent le score)
   repeatCount: 0,          // nombre de réécoutes demandées sur l'échange/la cible en cours
   groupLog: [],            // historique des cibles (groupes/indicatifs/mots) déjà envoyées dans la session guidée en cours
 };
@@ -2610,13 +2610,16 @@ function newTxRound(){
   }
 }
 
-/* Compteur de réécoutes TX : incrémenté à chaque demande de réécoute de
-   l'échange en cours — clic sur "Répéter", clic sur "RPT", ou envoi au
-   paddle de AGN?/NR? en mode Contest/QSO/QSO FR. Remis à zéro à chaque
-   nouvelle cible / nouveau round (newTxRound). */
+/* Compteur de réécoutes TX : en mode guidé (Indicatifs, Mots FR,
+   Groupes...), affiche le total CUMULÉ de réécoutes depuis le début de la
+   session en cours (celui qui réduit le score final) — pas seulement la
+   cible du moment. En Contest/QSO/QSO FR (pas de notion de session), il
+   reste par échange, remis à zéro à chaque nouveau round (newTxRound). */
 function updateRepeatCounterTx(){
-  repeatCountTx.textContent = txState.repeatCount;
-  repeatCounterRowTx.classList.toggle("rc-active", txState.repeatCount > 0);
+  const guidedModes = ["calls", "mots", "groups", "groups_letters", "groups_digits"];
+  const val = guidedModes.includes(txState.txMode) ? txState.session.repeats : txState.repeatCount;
+  repeatCountTx.textContent = val;
+  repeatCounterRowTx.classList.toggle("rc-active", val > 0);
 }
 function bumpTxRepeatCount(){
   txState.repeatCount++;
@@ -2660,7 +2663,7 @@ function startContestRound(){
   clearTimeout(contestState.reportTimer);
   contestState = { theirCall: "", awaitingReport: false, awaitingClosing: false, reportTimer: null, lastReport: "", currentSub: "", msgLog: [] };
   txTargetDisplay.textContent = "CONTEST";
-  setContestSub(`Manipulez : CQ TEST DE ${state.mycall} K`);
+  setContestSub(`Manipulez : CQ TEST DE ${state.mycall}`);
 }
 
 function contestCheckBuffer(){
@@ -2685,7 +2688,7 @@ function contestCheckBuffer(){
       } else if(contestState.awaitingClosing){
         setContestSub(`Manipulez : 73 TU`);
       } else {
-        setContestSub(`Manipulez : CQ TEST DE ${mycallSafe} K`);
+        setContestSub(`Manipulez : CQ TEST DE ${mycallSafe}`);
       }
     });
     return;
@@ -2731,7 +2734,7 @@ function contestCheckBuffer(){
         playMorseTx("EE", txState.listenWpm, txState.freq, () => {
           contestState.awaitingClosing = false;
           contestState.theirCall = "";
-          setContestSub(`Manipulez : CQ TEST DE ${mycallSafe} K`);
+          setContestSub(`Manipulez : CQ TEST DE ${mycallSafe}`);
         });
       }, 2000);
     }
@@ -2818,7 +2821,7 @@ function startQsoRound(){
                theirMeteo: "", theirRig: "", theirAntenna: "",
                step: 0, stepTimer: null, lastMsg: "", currentSub: "", msgLog: [] };
   txTargetDisplay.textContent = "QSO";
-  setQsoSub(`Manipulez : CQ CQ DE ${state.mycall} K`);
+  setQsoSub(`Manipulez : CQ CQ DE ${state.mycall}`);
 }
 
 function qsoCheckBuffer(){
@@ -2958,7 +2961,7 @@ function startQsoFrRound(){
                  theirMeteoDesc: "", theirMeteoTemp: "", myName: "",
                  lastMsg: "", currentSub: "", step: 0, stepTimer: null, msgLog: [] };
   txTargetDisplay.textContent = "QSO FR";
-  setQsoFrSub(`Manipulez : CQ CQ DE ${state.mycall} K`);
+  setQsoFrSub(`Manipulez : CQ CQ DE ${state.mycall}`);
 }
 
 function qsoFrCheckBuffer(){
@@ -3106,20 +3109,28 @@ function checkTxAnswer(){
   saveTxStats();
   if(ok){
     // Réponse "RR" en CW, comme un vrai correspondant qui confirme la
-    // bonne réception, avant de passer à la cible suivante — ou d'afficher
-    // le score final si la session de N essais est terminée.
+    // bonne réception, avant de passer à la cible suivante — ou, si c'est
+    // le tout dernier essai de la session (mode guidé : indicatifs, mots,
+    // groupes...), "RR 73" pour clôturer clairement l'exercice avant
+    // d'afficher le score, plutôt que de ne rien jouer du tout.
     txState.session.done++;
     txState.session.correct++;
-    playMorseTx("RR", txState.listenWpm, txState.freq, () => {
-      if(txState.session.active && txState.session.done >= txState.sessionLen){
+    const isLastOfSession = txState.session.active && txState.session.done >= txState.sessionLen;
+    const confirmMsg = isLastOfSession ? "RR 73" : "RR";
+    playMorseTx(confirmMsg, txState.listenWpm, txState.freq, () => {
+      if(isLastOfSession){
         showSessionScore();
       } else {
         setTimeout(newTxRound, 400);
       }
     });
   } else {
-    // Mauvaise réponse : on ne génère pas une nouvelle cible, on réécoute
+    // Mauvaise réponse : chaque erreur compte comme une réécoute, ce qui
+    // fera baisser le score affiché en fin de session (voir
+    // showSessionScore) — on ne génère pas une nouvelle cible, on réécoute
     // la même pour permettre à l'opérateur de réessayer immédiatement.
+    txState.session.repeats++;
+    updateRepeatCounterTx();
     decodedHistory = "";
     currentLetterBuffer = "";
     updateDecodedDisplay();
@@ -3139,13 +3150,19 @@ function showSessionScore(){
   // relance déjà newTxRound) pour démarrer une nouvelle session de N
   // essais. La session ne se relance jamais automatiquement, pour laisser
   // le temps de lire le score.
-  const correct = txState.session.correct;
+  // Chaque réécoute demandée pendant la session (erreur, "Répéter" ou
+  // "RPT") retire un point au score final — le 10/10 (100%) n'apparaît
+  // donc que si AUCUNE réécoute n'a eu lieu sur toute la session.
   const total = txState.session.done;
+  const repeats = txState.session.repeats;
+  const correct = Math.max(0, total - repeats);
   txState.session.active = false;
+  const pct = total ? Math.round(100*correct/total) : 0;
   txTargetDisplay.textContent = "SCORE";
-  txTargetSub.textContent = `Session terminée — Note = ${correct}/${total}. Cliquez sur "Nouvelle cible" pour recommencer.`;
-  txFeedbackLine.textContent = `🏁 Session terminée : ${correct}/${total} (${Math.round(100*correct/total)}%)`;
+  txTargetSub.textContent = `Session terminée — Note = ${correct}/${total}${repeats>0?` (${repeats} réécoute${repeats>1?"s":""})`:""}. Cliquez sur "Nouvelle cible" pour recommencer.`;
+  txFeedbackLine.textContent = `🏁 Session terminée : ${correct}/${total} (${pct}%)`;
   txFeedbackLine.className = "feedback-line ok";
+  updateRepeatCounterTx();
 }
 
 function renderTxStats(){
@@ -3321,7 +3338,7 @@ txNewTargetBtn.addEventListener("click", () => {
   if(guidedModes.includes(txState.txMode) && !txState.session.active){
     // La session précédente était arrivée à son terme (score affiché) :
     // on en démarre une nouvelle plutôt que de continuer celle déjà finie.
-    txState.session = { done: 0, correct: 0, active: true };
+    txState.session = { done: 0, correct: 0, active: true, repeats: 0 };
     txState.groupLog = [];
   }
   newTxRound();
@@ -3363,6 +3380,7 @@ txRepeatBtn.addEventListener("click", () => {
   // cible depuis le début sans avoir à cliquer sur "Effacer" séparément.
   if(txState.txMode === "free" || !txState.target) return;
   bumpTxRepeatCount();
+  if(txState.session.active) txState.session.repeats++;
   decodedHistory = "";
   currentLetterBuffer = "";
   clearTimeout(letterGapTimer);
@@ -3399,6 +3417,7 @@ function performTxRpt(){
       return;
     }
     bumpTxRepeatCount();
+    if(txState.session.active) txState.session.repeats++;
     decodedHistory = "";
     currentLetterBuffer = "";
     clearTimeout(letterGapTimer);
@@ -3502,10 +3521,10 @@ txModeTabs.addEventListener("click", (e) => {
   // compteur de progression repart de zéro pour ce mode.
   const guidedModes = ["calls", "mots", "groups", "groups_letters", "groups_digits"];
   if(guidedModes.includes(txState.txMode)){
-    txState.session = { done: 0, correct: 0, active: true };
+    txState.session = { done: 0, correct: 0, active: true, repeats: 0 };
     txState.groupLog = [];
   } else {
-    txState.session = { done: 0, correct: 0, active: false };
+    txState.session = { done: 0, correct: 0, active: false, repeats: 0 };
   }
   saveTxPrefs();
   newTxRound();
